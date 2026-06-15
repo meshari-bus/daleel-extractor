@@ -163,14 +163,17 @@ async def lookup(session, number):
                     await asyncio.sleep(300)
                     return None
                 rows = data.get("results", [])
+                # فلتر: فقط القوائم ذات 4 عناصر [name, type, confidence, id]
+                # الـ API يرجع ['no name'] أو ['phone'] للأرقام الفارغة — نتجاهلها
+                rows = [r for r in rows if isinstance(r, list) and len(r) >= 2 and r[0] and str(r[0]).strip()]
                 if rows:
                     def sort_key(r):
                         try: return (-int(r[2]), -int(r[3]))
                         except: return (0, 0)
                     rows.sort(key=sort_key)
-                    return [{"name": r[0], "confidence": int(r[2]) if r[2] else 0,
-                             "source_id": int(r[3]) if r[3] else 0}
-                            for r in rows if r[0] and str(r[0]).strip()]
+                    return [{"name": r[0], "confidence": int(r[2]) if len(r) > 2 and r[2] else 0,
+                             "source_id": int(r[3]) if len(r) > 3 and r[3] else 0}
+                            for r in rows]
                 return []
         except asyncio.TimeoutError:
             continue
