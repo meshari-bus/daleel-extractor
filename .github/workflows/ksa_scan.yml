@@ -1,11 +1,6 @@
 name: KSA Numbers Scanner
 on:
   workflow_dispatch:
-    inputs:
-      collector_url:
-        description: "Collector URL (https://xxx.trycloudflare.com)"
-        required: true
-        type: string
 
 jobs:
   scan:
@@ -81,6 +76,13 @@ jobs:
         run: pip install aiohttp pycryptodome
 
       - name: Scan
-        env:
-          COLLECTOR_URL: ${{ github.event.inputs.collector_url }}
         run: python ksa_worker.py ${{ matrix.args }}
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ksa-${{ matrix.id }}
+          path: "ksa_*.csv"
+          retention-days: 7
+          compression-level: 9
