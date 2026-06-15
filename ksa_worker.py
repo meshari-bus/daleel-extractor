@@ -4,7 +4,7 @@ KSA Numbers Worker — GitHub Actions
 Usage: python ksa_worker.py <prefix2> <from> <to>
 Example: python ksa_worker.py 50 0 1000000  →  0500000000 .. 0509999999
 """
-import asyncio, aiohttp, hashlib, base64, json, os, sys, time, random
+import asyncio, aiohttp, csv, hashlib, base64, json, os, sys, time, random
 from Crypto.Cipher import AES
 
 KEY          = "#i@m7ammad.com!#"
@@ -23,8 +23,24 @@ FOUND_WINDOW      = 60
 FOUND_PAUSE       = 90
 DELAY_MIN         = 0.9
 DELAY_MAX         = 2.2
-BATCH_SIZE        = 50    # إرسال للـ collector كل 50 رقم
+BATCH_SIZE        = 50
 HEARTBEAT_SECS    = 25
+
+CSV_FILE = ""   # يُضبط في main() قبل بدء العمال
+
+# ── CSV ───────────────────────────────────────────────────────────────────────
+def flush_to_csv(results):
+    """يكتب النتائج (أرقام وُجدت لها أسماء) في ملف CSV."""
+    if not results or not CSV_FILE:
+        return
+    with open(CSV_FILE, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        for item in results:
+            for rank, n in enumerate(item["names"], 1):
+                w.writerow([
+                    item["phone"], n["name"], rank,
+                    n.get("confidence", 0), n.get("source_id", 0)
+                ])
 
 # ── Crypto ────────────────────────────────────────────────────────────────────
 def _evp_kdf(pw, salt):
@@ -164,6 +180,11 @@ async def lookup(session, number):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 async def main(prefix2, start, end):
+    global CSV_FILE
+    CSV_FILE = f"ksa_{prefix2}_{start}.csv"
+    with open(CSV_FILE, "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerow(["phone", "name", "rank", "confidence", "source_id"])
+
     total      = end - start
     scanned    = 0
     found      = 0
@@ -179,9 +200,11 @@ async def main(prefix2, start, end):
     for n in numbers:
         queue.put_nowait(n)
 
-    print(f"[{prefix2}] {total:,} رقم | {start:,}→{end:,} | job={JOB_ID}", flush=True)
+    print(f"[{prefix2}] {total:,} رقم | {start:,}→{end:,} | job={JOB_ID} | csv={CSV_FILE}", flush=True)
     if COLLECTOR:
         print(f"[{prefix2}] Collector: {COLLECTOR}", flush=True)
+    else:
+        print(f"[{prefix2}] وضع Artifacts — البيانات تُحفظ في {CSV_FILE}", flush=True)
 
     # إرسال heartbeat أولي
     async with aiohttp.ClientSession() as sess:
@@ -217,8 +240,9 @@ async def main(prefix2, start, end):
 
             scanned += 1
 
-            # إرسال batch للـ collector
+            # flush batch: كتابة CSV + إرسال للـ collector
             if len(buf_results) + len(buf_empty) >= BATCH_SIZE:
+                flush_to_csv(buf_results)
                 await send_results(sess, buf_results, buf_empty)
                 buf_results = []
                 buf_empty   = []
@@ -244,11 +268,13 @@ async def main(prefix2, start, end):
         tasks = [asyncio.create_task(worker_task(sess)) for _ in range(WORKERS)]
         await asyncio.gather(*tasks)
 
-        # إرسال ما تبقى
+        # flush ما تبقى
+        flush_to_csv(buf_results)
         await send_results(sess, buf_results, buf_empty)
 
         # heartbeat نهائي
-        speed = scanned / (time.time() - t0) * 60 if time.time() > t0 else 0
+        elapsed = time.time() - t0 or 0.001
+        speed = scanned / elapsed * 60
         await post_collector(sess, "/heartbeat", {
             "job_id": JOB_ID, "prefix": prefix2,
             "range_from": start, "range_to": end,
@@ -256,7 +282,12 @@ async def main(prefix2, start, end):
             "bans": ban_count, "speed": speed, "started_at": t0,
         })
 
-    print(f"✓ [{prefix2}] انتهى | {scanned:,} مسح | {found:,} وجد | {ban_count} ban", flush=True)
+    csv_kb = os.path.getsize(CSV_FILE) / 1024
+    print(
+        f"✓ [{prefix2}] انتهى | {scanned:,} مسح | {found:,} وجد | "
+        f"{ban_count} ban | {CSV_FILE} ({csv_kb:.0f} KB)",
+        flush=True
+    )
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
