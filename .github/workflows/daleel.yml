@@ -1,0 +1,68 @@
+name: Daleel Full Extractor
+on:
+  workflow_dispatch:   # تشغيل يدوي من GitHub
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340        # أقل من حد GitHub (360 دقيقة)
+    strategy:
+      fail-fast: false          # إذا فشل job لا يوقف الباقين
+      max-parallel: 20          # 20 IP مختلف في نفس الوقت
+      matrix:
+        include:
+          # ── 050 ── (23,369 صفحة → 5 jobs)
+          - {id: "050-1", args: "050 130800  1065600"}
+          - {id: "050-2", args: "050 1065600 2000400"}
+          - {id: "050-3", args: "050 2000400 2935200"}
+          - {id: "050-4", args: "050 2935200 3870000"}
+          - {id: "050-5", args: "050 3870000 4806600"}
+
+          # ── 055 ── (23,503 صفحة → 5 jobs)
+          - {id: "055-1", args: "055 0       940200"}
+          - {id: "055-2", args: "055 940200  1880400"}
+          - {id: "055-3", args: "055 1880400 2820600"}
+          - {id: "055-4", args: "055 2820600 3760800"}
+          - {id: "055-5", args: "055 3760800 4701000"}
+
+          # ── 053 ── (15,542 صفحة → 4 jobs)
+          - {id: "053-1", args: "053 400     777600"}
+          - {id: "053-2", args: "053 777600  1554800"}
+          - {id: "053-3", args: "053 1554800 2332000"}
+          - {id: "053-4", args: "053 2332000 3113400"}
+
+          # ── 054 ── (10,794 صفحة → 2 jobs)
+          - {id: "054-1", args: "054 0       1079400"}
+          - {id: "054-2", args: "054 1079400 2158800"}
+
+          # ── 056 ── (10,795 صفحة → 2 jobs)
+          - {id: "056-1", args: "056 0       1079600"}
+          - {id: "056-2", args: "056 1079600 2159000"}
+
+          # ── 059 ── (6,654 صفحة → 1 job)
+          - {id: "059",   args: "059 0       1330800"}
+
+          # ── صغيرة ── 051+052+057+058 (7,747 صفحة → 1 job)
+          - {id: "small", args: "SMALL"}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Extract data
+        run: python extract_worker.py ${{ matrix.args }}
+
+      - name: Upload CSV results
+        uses: actions/upload-artifact@v4
+        if: always()     # ارفع حتى لو الخطوة فشلت جزئياً
+        with:
+          name: data-${{ matrix.id }}
+          path: "data_*.csv"
+          retention-days: 7
+          compression-level: 9
