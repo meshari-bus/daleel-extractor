@@ -5,17 +5,19 @@ Usage:
   python extract_worker.py <prefix> <skip_from> <skip_to>
   python extract_worker.py SMALL   (يعالج 051,052,057,058 بالترتيب)
 """
-import requests, csv, sys, time, os
+import requests, csv, sys, time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-URL = "https://daleel.mohaisentech.com/api/app/daleel-admin/contacts/search"
+import os
+_BASE = os.environ.get("PROXY_URL", "https://daleel.mohaisentech.com").rstrip("/")
+URL = f"{_BASE}/api/app/daleel-admin/contacts/search"
 HEADERS = {
     "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15",
     "content-type": "application/json",
     "accept": "application/json",
 }
 PAGE_SIZE = 200
-WORKERS   = 4   # 4 طلبات متزامنة ← ~200 طلب/دقيقة (الحد المسموح)
+WORKERS   = 3
 
 # ─── جلب صفحة واحدة مع retry ────────────────────────────────
 def fetch(prefix, skip, attempt=0):
